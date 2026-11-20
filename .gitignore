@@ -1,0 +1,8 @@
+node_modules/
+out/
+dist/
+engine/.cache/
+engine/.deps/
+engine/dist/
+*.log
+.DS_Store
