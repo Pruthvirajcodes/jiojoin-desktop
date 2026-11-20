@@ -1,8 +1,8 @@
 # How calling works on a Jio router
 
-This page describes the voice gateway inside a Jio home router and what a device on the home network sees when it uses the line. JioJoin Desktop talks to this gateway; so do Jio's own phone and set-top-box apps.
+The voice gateway inside a Jio home router and what a LAN device sees when using the line. JioJoin Desktop talks to this gateway; so do Jio's own phone and set-top-box apps.
 
-It is written from the outside: from what one router logs, answers and stores. Nothing here comes from Jio documentation.
+Observed from the outside—from what one router logs, answers and stores—not from Jio documentation.
 
 ## What this is based on
 

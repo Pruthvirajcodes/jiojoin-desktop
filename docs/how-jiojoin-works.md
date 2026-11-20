@@ -1,7 +1,5 @@
 # How JioJoin Desktop works
 
-This document explains how JioJoin Desktop finds your Jio router, gets permission to use your fixed line, registers, places and receives calls, recovers from problems, and keeps your line's credentials safe. It describes the app's behaviour and the router's local interface as seen from the outside. It contains no account data.
-
 ## The pieces
 
 ```
@@ -17,20 +15,20 @@ This document explains how JioJoin Desktop finds your Jio router, gets permissio
                                                                         │ IMS (Jio's network)
 ```
 
-- **Renderer.** Draws one state snapshot pushed by the main process. It can call only a fixed list of methods through the preload bridge. It has no Node.js or network access.
-- **Main process.** Owns everything stateful:
+- **Renderer (`src/renderer`).** React, Tailwind and shadcn/ui. Draws one state snapshot pushed by the main process and calls a fixed list of methods through the preload bridge. No Node.js or network access.
+- **Main process (`src/main`).** Owns everything stateful:
   - router discovery
-  - the provisioning (sign-in) client
-  - the line state machine and retry timer
+  - provisioning (sign-in) client
+  - line state machine and retry timer
   - call state and call history
-  - the encrypted sign-in vault
-  - logging, the tray and windows
-- **Engine.** A small C program built on PJSIP 2.17 with OpenSSL and the AMR-NB/AMR-WB codecs. The main process starts it as a child process and exchanges one JSON object per line on stdin and stdout. The engine does SIP signalling, TLS and audio, and nothing else. A crash in native code can't take down the app, and restarting the engine is a complete reset of SIP and audio state.
+  - encrypted sign-in vault
+  - logging, tray and windows
+- **Engine (`engine/`).** A small C program built on PJSIP 2.17 with OpenSSL and the AMR-NB/AMR-WB codecs. The main process spawns it and exchanges one JSON object per line on stdin and stdout. It handles SIP signalling, TLS and audio only. A crash in native code cannot take the app down, and restarting the process is a complete reset of SIP and audio state.
 
-The router side is Jio's voice gateway. It is the same service Jio's own JioJoin phone app talks to. To your line it looks like a set of extension handsets:
-- It hands each authorised device a SIP account.
-- It accepts SIP registrations over TLS.
-- It relays calls between those devices and Jio's IMS network.
+The router side is Jio's voice gateway (see [jio-firmware-and-calling.md](jio-firmware-and-calling.md))—the same service Jio's own phone app talks to:
+- Hands each authorised device a SIP account.
+- Accepts SIP registrations over TLS.
+- Relays calls between home devices and Jio's IMS network.
 
 ## 1. Finding the router
 
@@ -42,7 +40,7 @@ The app looks for the router in this order:
 Every candidate must be a private IPv4 address: 10/8, 172.16/12, 192.168/16, 169.254/16 or 100.64/10. Anything else is ignored.
 
 Each candidate is probed with a TLS connection to port 8443 and an HTTP `HEAD /`:
-- The connection is accepted only if the server's certificate names `jiofiber.local.html` (see Security).
+- The connection is accepted only if the server's certificate names `jiofiber.local.html` (see [Security model](#8-security-model)).
 - A real gateway answers the probe with `501 Not Implemented` and a `Server` header naming the router model and voice-service version. The app shows these on the first setup screen.
 
 Requests always carry the host name `jiofiber.local.html`, even when the address came from the gateway or from Settings, the same way `curl --resolve` does.
@@ -69,7 +67,7 @@ Provisioning is an HTTPS `GET` to port 8443, shaped like a GSMA RCS auto-configu
 2. **Request OTP.** Only this button sends the request with `op_type=add`, which asks the router to whitelist the device. The router texts a code to the mobile number registered with the line, and returns a session cookie.
 3. **Verify.** The app sends `GET /?OTP=<code>` with that cookie. On success the router returns the SIP account and the device is whitelisted.
 
-The app then saves the device ID, the device name and the line's display number in the vault (see Security). **The SIP password is never saved.**
+The app then saves the device ID, the device name and the line's display number in the vault (see [Security model](#8-security-model)). **The SIP password is never saved.**
 
 ## 3. Credentials are fetched again before every new registration
 
@@ -100,7 +98,7 @@ The router keeps a fixed number of devices on its whitelist. The number comes fr
 The engine registers through the router as its outbound proxy:
 - **Transport:** TLS to the router's address on port 5068 (by default), with the router's certificate name checked.
 - **Registrar:** the home domain. **Authentication:** SIP digest.
-- **Contact:** RFC 5626 outbound, with the router's bare-UUID `+sip.instance`, plus the IMS MMTel feature tags. The instance parameter rides on every Contact, because the gateway identifies the device by it on every dialog. A one-line PJSIP patch keeps the parameter from appearing twice on REGISTER.
+- **Contact:** RFC 5626 outbound, with the router's bare-UUID `+sip.instance`, plus the IMS MMTel feature tags. The instance parameter rides on every Contact, because the gateway identifies the device by it on every dialog. `engine/patches/pjproject-2.17-jio.patch` is the only patch to PJSIP: it keeps `pjsua` from appending a duplicate `+sip.instance` on REGISTER.
 - **Headers:** `P-Access-Network-Info` on every request, and `P-Preferred-Identity` on calls.
 - **Expiry:** 3600 seconds, refreshed by PJSIP.
 
@@ -188,10 +186,11 @@ Call audio (RTP) is unencrypted on the LAN.
 ### What is stored, and where
 | Data | Where | Protection |
 | --- | --- | --- |
-| Device ID, device name, line number | `account.bin` in the app's data folder | Encrypted with the OS keychain (Electron `safeStorage`). On Linux the app asks for the Secret Service keyring (libsecret) on desktops Chromium doesn't recognise, such as Hyprland or Sway; KDE uses KWallet. With no usable keychain it is kept in `account.json`, readable only by your user, because losing the device ID would cost a text and a whitelist slot. Sign-out keeps the device ID. |
+| Device ID, device name, line number | `account.bin` in the app's data folder | Encrypted with the OS keychain (Electron `safeStorage`). On Linux the app asks for the Secret Service keyring (`gnome-libsecret`) on desktops Chromium doesn't recognise, such as Hyprland or Sway; KDE uses KWallet. With no usable keychain it is kept in `account.json` (mode `0600`), because losing the device ID would cost a text and a whitelist slot, and migrates into `account.bin` if a keychain later becomes available. Sign-out keeps the device ID. |
 | SIP password | Memory only | Fetched for each registration and passed to the engine over stdin, never argv or the environment. |
-| Call history | `history.json` | File mode 0600. Removed on sign-out. |
-| Settings | `settings.json` | No secrets. |
+| Call history | `history.json` | File mode `0600`. Removed on sign-out. |
+| Settings | `settings.json` | File mode `0600`. No secrets. |
+| Logs | `logs/app.log` | File mode `0600`, rotates to `app.log.1` at 1 MiB, redacted before write. |
 
 ### Logs and diagnostics
 - **Redaction.** Every log line passes through a redactor before it is written. It removes phone numbers (runs of six or more digits), SIP user parts, MAC-style IDs, UUIDs and global IPv6 addresses. It also removes every value registered as secret, including the password, the auth user, the number, the device ID and the instance ID.

@@ -10,7 +10,7 @@ This takes about five minutes. Keep the phone whose number is registered with yo
 
 ## 1. Install and open
 
-1. macOS: open the `.dmg` from `bun run package:mac` (in `dist/`) and drag **JioJoin Desktop** to Applications. Linux: run the AppImage from `bun run package:linux`.
+1. Install the build for your OS from [Releases](https://github.com/Pruthvirajcodes/jiojoin-desktop/releases/latest) (see [README.md](README.md#install) for Gatekeeper, AppImage and SmartScreen steps), or from `dist/` if you built from source.
 2. Open it. If macOS asks to **find devices on your local network**, choose **Allow**. Without it the app cannot reach the router.
 
 ## 2. Set up the line
@@ -38,7 +38,7 @@ Within a few seconds the bottom-left of the window should read **Connected**. Th
 - **"Your router doesn't recognise this device."** The router has dropped this computer from its list: someone removed it in JioHome, a newer device took its place, or the router's voice settings were reset. Click **Authorise…** and request a code. If you were just on another network, click **Check again** first.
 - **The code isn't accepted.** Click **Send a new code** and use the newest text.
 - **One-way or no audio.** Check Settings → Audio (**Test microphone**, **Play test tone**), then try the call again.
-- **Getting help.** Settings → Help → **Export…** writes a report with numbers, names and device ids removed. The log is at `~/Library/Application Support/JioJoin Desktop/logs/app.log` and is redacted the same way.
+- **Getting help.** Settings → Help → **Export…** writes a report with numbers, names and device ids removed. The log is at `logs/app.log` inside the app data folder (on macOS: `~/Library/Application Support/JioJoin Desktop/logs/app.log`) and is redacted the same way.
 
 ## Good to know
 

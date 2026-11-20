@@ -1,10 +1,8 @@
 # OpenWrt on the Jio AirFiber JIDU6911, with Jio calling kept working
 
-This is a record of how one JIDU6911 indoor unit was moved from stock Jio firmware to OpenWrt, and how Jio's own voice gateway ("JUICE") was then made to run on it so the landline number kept working.
+Field report (one JIDU6911 unit, one firmware release, November 2026) on moving from stock Jio firmware to OpenWrt and running Jio's voice gateway ("JUICE") on it so the landline kept working. Not a recipe—read the risk section first.
 
-It is a field report, not a recipe. One unit, one firmware release, November 2026. Read the risk section before you decide anything.
-
-**You do not need any of this to use JioJoin Desktop.** The app works with a stock Jio router. This page is for people who already run, or want to run, OpenWrt on this hardware.
+**You do not need any of this to use JioJoin Desktop.** The app works with a stock Jio router.
 
 Each statement is either **done** (carried out on the unit and checked), **built/inspected only** (never run on hardware) or **not tested**.
 
