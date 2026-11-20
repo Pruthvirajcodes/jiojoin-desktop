@@ -1,0 +1,52 @@
+appId: dev.codetorso.jiojoin-desktop
+productName: JioJoin Desktop
+copyright: JioJoin Desktop contributors. GPL-3.0-or-later.
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+asar: true
+extraResources:
+  - from: resources
+    to: assets
+    filter: ["*.png"]
+  # The native calling engine for the platform being packaged.
+  - from: engine/dist/${platform}-${arch}
+    to: engine
+npmRebuild: false
+electronLanguages: [en-US, en-GB, en]
+
+mac:
+  category: public.app-category.social-networking
+  target: [dmg]
+  icon: build/icon.png
+  # Ad-hoc signature: enough to run on the machine that built it.
+  identity: "-"
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  extendInfo:
+    NSMicrophoneUsageDescription: JioJoin uses the microphone during calls.
+    NSLocalNetworkUsageDescription: JioJoin connects to your Jio router to place and receive calls.
+    LSUIElement: false
+dmg:
+  title: JioJoin Desktop
+  writeUpdateInfo: false
+
+win:
+  target: [nsis]
+  icon: build/icon.png
+nsis:
+  oneClick: true
+  perMachine: false
+  shortcutName: JioJoin
+
+linux:
+  target: [AppImage]
+  icon: build/icon.png
+  category: Network;Telephony
+  executableName: jiojoin-desktop
+  syncDesktopName: true
+  synopsis: Calls on your Jio fixed line from your desktop
