@@ -1,0 +1,169 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * Colours follow the desktop's light or dark appearance. The main process
+ * sets nativeTheme.themeSource, which drives prefers-color-scheme here, so
+ * Tailwind's default `dark:` variant needs no class toggling.
+ */
+:root {
+  --radius: 0.5rem;
+  --background: #ffffff;
+  --foreground: #1d1d1f;
+  --card: #ffffff;
+  --card-foreground: #1d1d1f;
+  --popover: #ffffff;
+  --popover-foreground: #1d1d1f;
+  --primary: #0a6cff;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f3;
+  --secondary-foreground: #1d1d1f;
+  --muted: #f4f4f6;
+  --muted-foreground: #6b6b72;
+  --accent: #ececf0;
+  --accent-foreground: #1d1d1f;
+  --destructive: #e5352b;
+  --border: #e3e3e8;
+  --input: #d4d4da;
+  --ring: #0a6cff;
+  --sidebar: #f4f4f6;
+  --sidebar-border: #e3e3e8;
+  --call: #23a845;
+  --call-hover: #1f9a3e;
+  --hangup: #e5352b;
+  --hangup-hover: #d32d24;
+  --key: #f0f0f3;
+  --key-hover: #e4e4e9;
+  --key-active: #d6d6dd;
+  --warning: #9a5b00;
+  --warning-surface: #fff6e0;
+  --warning-border: #f2dfa8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #1c1c1e;
+    --foreground: #f5f5f7;
+    --card: #232325;
+    --card-foreground: #f5f5f7;
+    --popover: #2a2a2d;
+    --popover-foreground: #f5f5f7;
+    --primary: #2f8bff;
+    --primary-foreground: #ffffff;
+    --secondary: #2c2c2f;
+    --secondary-foreground: #f5f5f7;
+    --muted: #262629;
+    --muted-foreground: #a1a1a8;
+    --accent: #333337;
+    --accent-foreground: #f5f5f7;
+    --destructive: #ff5147;
+    --border: #353539;
+    --input: #47474c;
+    --ring: #2f8bff;
+    --sidebar: #232325;
+    --sidebar-border: #303034;
+    --call: #2bbd4f;
+    --call-hover: #33cc58;
+    --hangup: #f0443a;
+    --hangup-hover: #ff5a50;
+    --key: #2c2c2f;
+    --key-hover: #37373b;
+    --key-active: #444449;
+    --warning: #f0c060;
+    --warning-surface: #33290f;
+    --warning-border: #4d3d14;
+  }
+}
+
+@theme inline {
+  --font-sans: system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Cantarell, sans-serif;
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-call: var(--call);
+  --color-call-hover: var(--call-hover);
+  --color-hangup: var(--hangup);
+  --color-hangup-hover: var(--hangup-hover);
+  --color-key: var(--key);
+  --color-key-hover: var(--key-hover);
+  --color-key-active: var(--key-active);
+  --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
+  --color-warning-border: var(--warning-border);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted-foreground) 45%, transparent) transparent;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 14px;
+    cursor: default;
+    user-select: none;
+    overflow: hidden;
+  }
+  input,
+  textarea,
+  .selectable {
+    user-select: text;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: default;
+  }
+}
+
+@utility drag {
+  -webkit-app-region: drag;
+}
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* The incoming-call popup is a transparent window showing one rounded card. */
+html.popup,
+html.popup body {
+  background: transparent;
+}
+
+/* Window title area: draggable, with room for Windows' caption buttons. */
+.titlebar {
+  -webkit-app-region: drag;
+}
+.titlebar :is(button, input, [role="tablist"]) {
+  -webkit-app-region: no-drag;
+}
+[data-platform="win32"] .titlebar {
+  padding-right: 150px;
+}
