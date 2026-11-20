@@ -1,5 +1,6 @@
 # Builds and tests the app on all three desktop platforms and uploads the
 # installers as artifacts. The engine is native, so each platform builds its own.
+# A "v*" tag also publishes the three installers as a GitHub release.
 name: build
 
 on:
@@ -27,11 +28,18 @@ jobs:
             engine/.cache
             engine/.deps
           key: engine-deps-macos-arm64-${{ hashFiles('engine/scripts/build-deps.sh', 'engine/patches/**', 'engine/src/config_site.h') }}
-      - run: brew install openssl@3 pkg-config
+      - run: brew install pkg-config
       - run: bun install --frozen-lockfile
       - run: bun run engine:build
         env:
           JOBS: 4
+      - name: Engine must load on macOS 12 and need no Homebrew libraries
+        run: |
+          otool -l engine/dist/darwin-arm64/jiojoin-engine | grep -A3 LC_BUILD_VERSION | grep -q 'minos 12.0'
+          if otool -L engine/dist/darwin-arm64/jiojoin-engine | grep -E 'homebrew|/usr/local|libssl|libcrypto'; then
+            echo "engine links a library a user's Mac won't have" >&2
+            exit 1
+          fi
       - run: bun run typecheck
       - run: bun run test
       - run: bun run package:mac
@@ -42,7 +50,9 @@ jobs:
           if-no-files-found: error
 
   linux:
-    runs-on: ubuntu-24.04
+    # The oldest supported runner: the engine is linked against this glibc,
+    # so building here keeps the AppImage running on older distributions.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -55,11 +65,18 @@ jobs:
             engine/.cache
             engine/.deps
           key: engine-deps-linux-x64-${{ hashFiles('engine/scripts/build-deps.sh', 'engine/patches/**', 'engine/src/config_site.h') }}
-      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev libasound2-dev
+      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libasound2-dev
       - run: bun install --frozen-lockfile
       - run: bun run engine:build
         env:
           JOBS: 4
+      - name: Engine must not depend on the distribution's OpenSSL
+        run: |
+          ldd engine/dist/linux-x64/jiojoin-engine
+          if ldd engine/dist/linux-x64/jiojoin-engine | grep -E 'libssl|libcrypto'; then
+            echo "engine links the system OpenSSL; the AppImage would break on other distributions" >&2
+            exit 1
+          fi
       - run: bun run typecheck
       - run: bun run test
       - run: bun run package:linux
@@ -119,3 +136,26 @@ jobs:
           name: jiojoin-desktop-windows-x64
           path: dist/*.exe
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish the installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -l artifacts
+          prerelease=""
+          if [[ "$TAG" == *-* ]]; then prerelease="--prerelease"; fi
+          gh release create "$TAG" artifacts/* --repo "$GITHUB_REPOSITORY" --title "JioJoin Desktop $TAG" \
+            --notes "Builds for macOS (Apple silicon, macOS 12+), Linux (x64 AppImage) and Windows (x64, untested). Not notarised or code-signed: see README for how to open them." \
+            $prerelease

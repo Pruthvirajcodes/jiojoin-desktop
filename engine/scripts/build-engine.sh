@@ -20,11 +20,13 @@ LIBS_PJ="$(pkg-config --static --libs libpjproject)"
 EXTRA_LDFLAGS=()
 case "$PLATFORM" in
   darwin)
-    # Resolve -lssl/-lcrypto to the static archives copied by build-deps.sh.
+    # Same floor as the dependencies, so the engine loads on older macOS.
+    export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}"
+    # Resolve -lssl/-lcrypto to the static archives built by build-deps.sh.
     EXTRA_LDFLAGS+=("-L$PREFIX/openssl/lib" -Wl,-dead_strip)
     ;;
   linux)
-    EXTRA_LDFLAGS+=(-Wl,--gc-sections -Wl,--as-needed)
+    EXTRA_LDFLAGS+=("-L$PREFIX/openssl/lib" -Wl,--gc-sections -Wl,--as-needed)
     ;;
   win32)
     EXTRA_LDFLAGS+=(-static -Wl,--gc-sections)
