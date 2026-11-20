@@ -10,6 +10,18 @@ This is an independent interoperability client for a subscriber's own line. It i
 
 More screens are in [docs/screenshots](docs/screenshots). First-time setup is in [FIRST_RUN.md](FIRST_RUN.md).
 
+**Status: beta, for people comfortable with an unsigned app and a log file.** It has been used on a JioFiber/AirFiber line on macOS and Linux. Windows builds are produced but have never been run.
+
+## Install
+
+Download the build for your system from [Releases](../../releases). None of them are code-signed or notarised.
+
+- **macOS** (Apple silicon, macOS 12 or newer): open the `.dmg` and drag the app to Applications. The first time, right-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine "/Applications/JioJoin Desktop.app"`.
+- **Linux** (x64): `chmod +x jiojoin-desktop-*.AppImage` and run it. The sign-in is kept in your Secret Service keyring (GNOME Keyring, KWallet) when one is running.
+- **Windows** (x64, untested): run the installer; SmartScreen will ask you to confirm under **More info**.
+
+Then follow [FIRST_RUN.md](FIRST_RUN.md). How the app and the router work is in [docs/how-jiojoin-works.md](docs/how-jiojoin-works.md) and [docs/jio-firmware-and-calling.md](docs/jio-firmware-and-calling.md).
+
 ## How it is built
 
 ```
@@ -36,13 +48,14 @@ React UI (renderer)  ──IPC──  Electron main  ──JSON lines over stdio
 ### Security notes
 
 - The router's certificate is self-signed and its private key ships in every firmware image, so TLS to the router gives confidentiality on the LAN, not authentication. The app accepts it only for a private IPv4 address, only on those two ports, and only when the certificate names `jiofiber.local.html`. Nothing is sent before that check, and no global TLS setting is changed.
-- The saved sign-in is encrypted with the OS keychain through Electron `safeStorage`. The SIP password is never written to disk: it is fetched for each registration and passed to the engine over stdin.
+- The saved sign-in (the device ID the router whitelists, the device name and the line's number) is encrypted with the OS keychain through Electron `safeStorage`. Where no keychain is usable it is kept in a file only the user can read, because losing the device ID costs the owner a text and another device its place on the line. The SIP password is never written to disk: it is fetched for each registration and passed to the engine over stdin.
 - Log lines and the diagnostics export pass through a redactor that removes numbers, SIP users, device and instance ids, and any value registered as secret.
-- Only an explicit **Request OTP** click, or a refresh for a device that was already authorised, sends the request that can make the router text a code. If the router ever answers a refresh with an OTP challenge, the app stops retrying and asks you.
+- Only an explicit **Request OTP** click sends the request that can make the router text a code. Refreshes use the plain request, which can't. If the router no longer recognises the device, the app stops retrying and asks you.
+- The router keeps a short whitelist (6 devices on the lines we've seen) and silently drops the oldest when a new device is added. The app keeps its device ID across restarts and sign-out so it never takes a second slot.
 
 ## Develop
 
-Requirements: [bun](https://bun.sh), a C toolchain, `pkg-config`, and OpenSSL 3 headers (macOS: `brew install openssl@3`; Linux also needs ALSA headers).
+Requirements: [bun](https://bun.sh), a C toolchain, `make`, `perl` and `pkg-config` (Linux also needs ALSA headers, for example `libasound2-dev`). The first engine build downloads and compiles pinned, checksummed releases of PJSIP, the AMR codecs and OpenSSL, which takes several minutes.
 
 ```sh
 bun install
@@ -61,11 +74,11 @@ The tests never contact a router. `tests/engine-sip.test.ts` runs the real engin
 
 | Platform | Engine | App package |
 | --- | --- | --- |
-| macOS arm64 | built and tested | `.dmg`, ad-hoc signed (runs on the machine that built it) |
-| Linux x64 | built and tested on Arch | AppImage |
-| Windows x64 | CI workflow only, never run | NSIS installer |
+| macOS arm64 | built and tested | `.dmg`, ad-hoc signed, not notarised; macOS 12 or newer |
+| Linux x64 | built and tested on Arch | AppImage, built on Ubuntu 22.04 so it runs on older distributions |
+| Windows x64 | built in CI, never run | NSIS installer |
 
-The macOS engine links Homebrew's static OpenSSL, so it needs the macOS version it was built on or newer.
+The engine links OpenSSL statically on every platform, so it needs nothing from the system beyond the C library and, on Linux, ALSA.
 
 ## Licence
 
