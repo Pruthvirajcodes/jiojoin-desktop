@@ -32,7 +32,7 @@ case "$PLATFORM" in
   win32)
     EXTRA_LDFLAGS+=(-static -Wl,--gc-sections)
     # After PJSIP's libraries: what static libcrypto needs from Windows.
-    EXTRA_LIBS+=(-lws2_32 -lcrypt32 -lgdi32 -luser32 -ladvapi32)
+    EXTRA_LIBS+=(-lws2_32 -lcrypt32 -lbcrypt -lgdi32 -luser32 -ladvapi32)
     ;;
 esac
 

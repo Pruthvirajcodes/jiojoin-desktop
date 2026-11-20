@@ -99,7 +99,7 @@ if [[ "$PLATFORM" == "win32" ]]; then
   export LDFLAGS="${LDFLAGS:-} -static"
   # Static libcrypto needs these Windows libraries, or configure's link test
   # for OpenSSL fails and PJSIP quietly builds without TLS.
-  export LIBS="${LIBS:-} -lws2_32 -lcrypt32 -lgdi32 -luser32 -ladvapi32"
+  export LIBS="${LIBS:-} -lws2_32 -lcrypt32 -lbcrypt -lgdi32 -luser32 -ladvapi32"
 else
   echo "deps: building OpenSSL $SSL_VER"
   tar -xzf "$CACHE/openssl-$SSL_VER.tar.gz" -C "$SRC"
