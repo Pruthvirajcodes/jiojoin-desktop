@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Builds the engine's native dependencies as static libraries:
 # opencore-amr (AMR-NB codec, AMR-WB decoder), vo-amrwbenc (AMR-WB encoder),
-# OpenSSL 3.5 LTS (macOS and Linux) and PJSIP 2.17 with OpenSSL TLS.
+# OpenSSL 3.5 LTS and PJSIP 2.17 with OpenSSL TLS.
 # Output: engine/.deps/<target>/prefix
 #
 # OpenSSL is built from source rather than taken from the system so the
 # engine runs beyond the machine that built it: on macOS, Homebrew's archives
 # target the host's macOS version; on Linux, linking it statically keeps the
-# AppImage independent of the distribution's libssl.
+# AppImage independent of the distribution's libssl; on Windows, MSYS2's
+# OpenSSL has moved past what PJSIP 2.17 compiles against.
 set -euo pipefail
 
 ENGINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -61,7 +62,7 @@ fetch() { # url file sha
 fetch "$PJ_URL" "pjproject-$PJ_VER.tar.gz" "$PJ_SHA"
 fetch "$AMR_URL" "opencore-amr-$AMR_VER.tar.gz" "$AMR_SHA"
 fetch "$WBENC_URL" "vo-amrwbenc-$WBENC_VER.tar.gz" "$WBENC_SHA"
-if [[ "$PLATFORM" != "win32" ]]; then fetch "$SSL_URL" "openssl-$SSL_VER.tar.gz" "$SSL_SHA"; fi
+fetch "$SSL_URL" "openssl-$SSL_VER.tar.gz" "$SSL_SHA"
 
 rm -rf "$SRC" "$PREFIX"
 mkdir -p "$SRC" "$PREFIX"
@@ -84,34 +85,34 @@ tar -xzf "$CACHE/vo-amrwbenc-$WBENC_VER.tar.gz" -C "$SRC"
   && ./configure --prefix="$PREFIX" --disable-shared --enable-static --with-pic >/dev/null \
   && make -j"$JOBS" >/dev/null && make install >/dev/null )
 
-# OpenSSL, always linked statically so the engine is self-contained. Windows
-# uses MSYS2's static archives; macOS and Linux build the pinned release.
-SSL_ARGS=()
+# OpenSSL: the pinned release, built and linked statically on every platform
+# so the engine is self-contained.
 case "$PLATFORM-$ARCH" in
   darwin-arm64) SSL_TARGET=darwin64-arm64-cc ;;
   darwin-x64) SSL_TARGET=darwin64-x86_64-cc ;;
   linux-x64) SSL_TARGET=linux-x86_64 ;;
   linux-arm64) SSL_TARGET=linux-aarch64 ;;
-  *) SSL_TARGET="" ;;
+  win32-x64) SSL_TARGET=mingw64 ;;
+  *) echo "deps: no OpenSSL target for $TARGET" >&2; exit 1 ;;
 esac
-if [[ "$PLATFORM" == "win32" ]]; then
-  SSL_ARGS=(--with-ssl="${OPENSSL_ROOT:-${MINGW_PREFIX:-/mingw64}}")
-  export LDFLAGS="${LDFLAGS:-} -static"
-  # Static libcrypto needs these Windows libraries, or configure's link test
-  # for OpenSSL fails and PJSIP quietly builds without TLS.
-  export LIBS="${LIBS:-} -lws2_32 -lcrypt32 -lbcrypt -lgdi32 -luser32 -ladvapi32"
-else
-  echo "deps: building OpenSSL $SSL_VER"
-  tar -xzf "$CACHE/openssl-$SSL_VER.tar.gz" -C "$SRC"
-  ( cd "$SRC/openssl-$SSL_VER" \
-    && ./Configure "$SSL_TARGET" --prefix="$PREFIX/openssl" --libdir=lib \
-         no-shared no-tests no-docs no-apps no-legacy > "$DEPS/openssl-configure.log" 2>&1 \
-    && make -j"$JOBS" build_libs > "$DEPS/openssl-build.log" 2>&1 \
-    && make install_dev >> "$DEPS/openssl-build.log" 2>&1 ) \
-    || { tail -40 "$DEPS/openssl-build.log" "$DEPS/openssl-configure.log" >&2 2>/dev/null; exit 1; }
-  SSL_ARGS=(--with-ssl="$PREFIX/openssl")
-  if [[ "$PLATFORM" == "darwin" ]]; then SSL_ARGS+=(--disable-darwin-ssl); fi
-fi
+echo "deps: building OpenSSL $SSL_VER"
+tar -xzf "$CACHE/openssl-$SSL_VER.tar.gz" -C "$SRC"
+( cd "$SRC/openssl-$SSL_VER" \
+  && ./Configure "$SSL_TARGET" --prefix="$PREFIX/openssl" --libdir=lib \
+       no-shared no-tests no-docs no-apps no-legacy > "$DEPS/openssl-configure.log" 2>&1 \
+  && make -j"$JOBS" build_libs > "$DEPS/openssl-build.log" 2>&1 \
+  && make install_dev >> "$DEPS/openssl-build.log" 2>&1 ) \
+  || { tail -40 "$DEPS/openssl-build.log" "$DEPS/openssl-configure.log" >&2 2>/dev/null; exit 1; }
+SSL_ARGS=(--with-ssl="$PREFIX/openssl")
+case "$PLATFORM" in
+  darwin) SSL_ARGS+=(--disable-darwin-ssl) ;;
+  win32)
+    export LDFLAGS="${LDFLAGS:-} -static"
+    # Static libcrypto needs these Windows libraries, or configure's link test
+    # for OpenSSL fails and PJSIP quietly builds without TLS.
+    export LIBS="${LIBS:-} -lws2_32 -lcrypt32 -lbcrypt -lgdi32 -luser32 -ladvapi32"
+    ;;
+esac
 
 echo "deps: building pjproject $PJ_VER"
 tar -xzf "$CACHE/pjproject-$PJ_VER.tar.gz" -C "$SRC"

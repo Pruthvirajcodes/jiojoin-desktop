@@ -30,7 +30,7 @@ case "$PLATFORM" in
     EXTRA_LDFLAGS+=("-L$PREFIX/openssl/lib" -Wl,--gc-sections -Wl,--as-needed)
     ;;
   win32)
-    EXTRA_LDFLAGS+=(-static -Wl,--gc-sections)
+    EXTRA_LDFLAGS+=("-L$PREFIX/openssl/lib" -static -Wl,--gc-sections)
     # After PJSIP's libraries: what static libcrypto needs from Windows.
     EXTRA_LIBS+=(-lws2_32 -lcrypt32 -lbcrypt -lgdi32 -luser32 -ladvapi32)
     ;;
