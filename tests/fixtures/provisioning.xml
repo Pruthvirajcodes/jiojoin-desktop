@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic fixture. Every identity and secret below is made up. -->
+<wap-provisioningdoc version="1.1">
+  <characteristic type="vers">
+    <parm name="version" value="34"/>
+    <parm name="validity" value="86400"/>
+  </characteristic>
+  <characteristic type="token">
+    <parm name="token" value="synthetic-token"/>
+  </characteristic>
+  <characteristic type="application">
+    <parm name="appid" value="ap2001"/>
+    <characteristic type="appauth">
+      <parm name="authtype" value="Digest"/>
+      <parm name="realm" value="xx.wln.ims.example.test"/>
+      <parm name="username" value="915550100123@xx.wln.ims.example.test"/>
+      <parm name="userpwd" value="Synth&amp;tic-P4ss/0123"/>
+    </characteristic>
+    <characteristic type="lbo_p-cscf_address">
+      <parm name="address" value="Jiofiber.local.html:5068"/>
+      <parm name="addresstype" value="IPv6"/>
+    </characteristic>
+    <characteristic type="other">
+      <parm name="uuid_value" value="00000000-0000-1000-8000-0242AC1F0A0B"/>
+      <parm name="deviceid" value="1"/>
+    </characteristic>
+    <parm name="home_network_domain_name" value="xx.wln.ims.example.test"/>
+    <parm name="private_user_identity" value="sip:915550100123@xx.wln.ims.example.test"/>
+    <characteristic type="public_user_identity_list">
+      <parm name="public_user_identity" value="sip:+915550100123@xx.wln.ims.example.test"/>
+    </characteristic>
+    <parm name="keep_alive_enabled" value="1"/>
+    <parm name="regretrybasetime" value="5"/>
+    <parm name="regretrymaxtime" value="300"/>
+    <characteristic type="rjil">
+      <parm name="pnparam" value="com.example.call"/>
+      <parm name="psoltid" value="+915550"/>
+    </characteristic>
+    <characteristic type="wae">
+      <parm name="url" value="https://wae.example.test/"/>
+      <parm name="pwd" value="other-secret"/>
+      <parm name="realm" value="wrong-realm.example.test"/>
+    </characteristic>
+  </characteristic>
+</wap-provisioningdoc>
