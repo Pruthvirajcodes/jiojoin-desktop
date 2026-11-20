@@ -1,0 +1,20 @@
+JUICE (the Jio router voice gateway) looks a LAN client up by the
++sip.instance value on every dialog, not only on REGISTER. The engine therefore
+puts the instance parameter into the account's contact_params so it rides on
+every Contact. This keeps pjsua from appending a second copy on REGISTER.
+
+--- a/pjsip/src/pjsua-lib/pjsua_acc.c
++++ b/pjsip/src/pjsua-lib/pjsua_acc.c
+@@ -1874,7 +1874,11 @@ done:
+                  * +sip.instance and reg-id parameters.
+                  */
+                 pj_strcat(&reg_contact, &acc->rfc5626_regprm);
+-                pj_strcat(&reg_contact, &acc->rfc5626_instprm);
++                if (pj_strstr(&acc->cfg.contact_params,
++                              &acc->rfc5626_instprm) == NULL)
++                {
++                    pj_strcat(&reg_contact, &acc->rfc5626_instprm);
++                }
+             } else {
+                 acc->rfc5626_status = OUTBOUND_NA;
+             }
