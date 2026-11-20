@@ -97,6 +97,9 @@ esac
 if [[ "$PLATFORM" == "win32" ]]; then
   SSL_ARGS=(--with-ssl="${OPENSSL_ROOT:-${MINGW_PREFIX:-/mingw64}}")
   export LDFLAGS="${LDFLAGS:-} -static"
+  # Static libcrypto needs these Windows libraries, or configure's link test
+  # for OpenSSL fails and PJSIP quietly builds without TLS.
+  export LIBS="${LIBS:-} -lws2_32 -lcrypt32 -lgdi32 -luser32 -ladvapi32"
 else
   echo "deps: building OpenSSL $SSL_VER"
   tar -xzf "$CACHE/openssl-$SSL_VER.tar.gz" -C "$SRC"
@@ -131,7 +134,8 @@ grep -q 'PJMEDIA_HAS_OPENCORE_AMRNB_CODEC *1' "$PJ/pjmedia/include/pjmedia-codec
 grep -q 'PJMEDIA_HAS_OPENCORE_AMRWB_CODEC *1' "$PJ/pjmedia/include/pjmedia-codec/config_auto.h" \
   || { echo "deps: PJSIP configure did not enable AMR-WB" >&2; exit 1; }
 grep -q 'PJ_HAS_SSL_SOCK *1' "$PJ/pjlib/include/pj/compat/os_auto.h" \
-  || { echo "deps: PJSIP configure did not enable TLS" >&2; exit 1; }
+  || { echo "deps: PJSIP configure did not enable TLS" >&2; grep -i -E 'ssl|crypto' "$DEPS/pjproject-configure.log" >&2; \
+       grep -n -i -B2 -A12 'for ERR_load_BIO_strings\|for SSL_' "$PJ/config.log" 2>/dev/null | tail -60 >&2; exit 1; }
 
 ( cd "$PJ" && make dep > "$DEPS/pjproject-build.log" 2>&1 \
   && make -j"$JOBS" lib >> "$DEPS/pjproject-build.log" 2>&1 \
