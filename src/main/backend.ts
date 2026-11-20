@@ -26,21 +26,18 @@ export interface Backend {
 }
 
 /**
- * Fetches the line's SIP account. The plain request cannot cause an OTP text;
- * `allowEnrol` adds the `op_type=add` request, which can, so pass it only
- * when the user asked for it or this device was authorised before.
+ * Fetches the line's SIP account with the plain request, which can never make
+ * the router text a code. Only `enrolDevice` (an explicit user action) can.
  */
 export async function fetchCredentials(
   backend: Backend,
   address: string,
   identity: ProvisioningIdentity,
-  allowEnrol: boolean,
 ): Promise<ProvisioningReply> {
-  const plain = parseProvisioningReply(
-    await backend.request({ address, method: "GET", path: buildProvisioningPath(identity) }),
-  );
-  if (plain.kind !== "rejected" || !allowEnrol) return plain;
-  return enrolDevice(backend, address, identity);
+  const response = await backend.request({ address, method: "GET", path: buildProvisioningPath(identity) });
+  const reply = parseProvisioningReply(response);
+  if (reply.kind !== "config") logReplyShape("refresh", response, reply);
+  return reply;
 }
 
 export async function enrolDevice(
@@ -50,12 +47,16 @@ export async function enrolDevice(
 ): Promise<ProvisioningReply> {
   const response = await backend.request({ address, method: "GET", path: buildProvisioningPath(identity, "add") });
   const reply = parseProvisioningReply(response);
-  // Names and sizes only: enough to tell how a router's enrol reply differs.
+  logReplyShape("enrol", response, reply);
+  return reply;
+}
+
+/** Names and sizes only: enough to tell how a router's replies differ, nothing secret. */
+function logReplyShape(label: string, response: RouterResponse, reply: ProvisioningReply): void {
   log.info(
     "onboarding",
-    `enrol reply: HTTP ${response.status} → ${reply.kind}; headers ${Object.keys(response.headers).join(",") || "none"}; body ${response.body.length} chars`,
+    `${label} reply: HTTP ${response.status} → ${reply.kind}${reply.kind === "rejected" ? ` (${reply.reason})` : ""}; headers ${Object.keys(response.headers).join(",") || "none"}; body ${response.body.length} chars`,
   );
-  return reply;
 }
 
 export async function submitOtp(
@@ -64,7 +65,8 @@ export async function submitOtp(
   cookie: string,
   code: string,
 ): Promise<ProvisioningReply> {
-  return parseProvisioningReply(
-    await backend.request({ address, method: "GET", path: buildOtpPath(code), cookie }),
-  );
+  const response = await backend.request({ address, method: "GET", path: buildOtpPath(code), cookie });
+  const reply = parseProvisioningReply(response);
+  if (reply.kind !== "config") logReplyShape("code", response, reply);
+  return reply;
 }

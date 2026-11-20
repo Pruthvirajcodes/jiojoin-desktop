@@ -9,9 +9,19 @@ export interface RouterResponse {
   body: string;
 }
 
+/** Every way a request to the router can fail. reasons.ts maps each one to what the user reads. */
+export type RouterFailureCode =
+  | "not-private"
+  /** Nothing listening on the port: the calling service is down or restarting. */
+  | "refused"
+  | "unreachable"
+  | "timeout"
+  | "bad-certificate"
+  | "bad-reply";
+
 export class RouterHttpError extends Error {
   constructor(
-    readonly code: "not-private" | "unreachable" | "timeout" | "bad-certificate" | "bad-reply",
+    readonly code: RouterFailureCode,
     message: string,
   ) {
     super(message);
@@ -77,7 +87,8 @@ export function requestOverTls(options: RouterRequestOptions, port: number): Pro
     );
 
     socket.once("error", (error: NodeJS.ErrnoException) => {
-      fail(new RouterHttpError("unreachable", error.code ?? error.message));
+      const code = error.code === "ECONNREFUSED" ? "refused" : "unreachable";
+      fail(new RouterHttpError(code, error.code ?? error.message));
     });
 
     socket.once("secureConnect", () => {

@@ -162,11 +162,11 @@ describe.skipIf(!routerIdentity || !otherIdentity)("router HTTPS transport", () 
     }
   });
 
-  it("reports an unreachable router", async () => {
+  it("reports a router whose calling service refuses connections", async () => {
     const closed = await fakeRouter(routerIdentity!, () => null);
     await closed.close();
     await expect(
       requestOverTls({ address: "127.0.0.1", method: "HEAD", path: "/" }, closed.port),
-    ).rejects.toMatchObject({ code: "unreachable" });
+    ).rejects.toMatchObject({ code: "refused" });
   });
 });

@@ -88,11 +88,13 @@ describe("line state machine", () => {
     expect(state.attempt).toBe(0);
   });
 
-  it("stops retrying when the router asks for an OTP", () => {
+  it("stops retrying on a timer when the device needs confirming, but checks again on a new network", () => {
     const { state, effects } = run([{ type: "sign-in" }, { type: "otp-required" }, { type: "retry-due" }]);
     expect(state.status).toBe("needs-otp");
     expect(effects.filter((effect) => effect === "start-attempt")).toHaveLength(1);
-    expect(reduceLine(state, { type: "network-changed" }, context).state).toBe(state);
+    // Attempts only send the plain request, which can't text anyone.
+    expect(reduceLine(state, { type: "network-changed" }, context).state.status).toBe("connecting");
+    expect(reduceLine(state, { type: "connect" }, context).state.status).toBe("connecting");
   });
 
   it("reconnects from scratch when the network changes", () => {

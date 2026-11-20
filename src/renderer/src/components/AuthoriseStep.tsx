@@ -26,6 +26,10 @@ export function AuthoriseStep({ onboarding }: { onboarding: OnboardingState }) {
           Your router confirms new devices with a one-time code. It texts the code to the mobile number
           registered with your Jio line, so keep that phone nearby.
         </p>
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          A Jio line allows only a few calling devices (6 on lines we've seen), counting Jio's own apps. If the
+          list is full, adding this computer removes the device that was added longest ago.
+        </p>
         {error && (
           <p role="alert" className="text-destructive text-sm">
             {error}

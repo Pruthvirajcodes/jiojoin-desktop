@@ -73,12 +73,17 @@ function LineBanner({ state, onAuthorise }: { state: AppState; onAuthorise(): vo
     return (
       <Banner
         action={
-          <Button variant="outline" size="sm" onClick={onAuthorise}>
-            Authorise…
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => void window.jiojoin.reconnect()}>
+              Check again
+            </Button>
+            <Button variant="outline" size="sm" onClick={onAuthorise}>
+              Authorise…
+            </Button>
+          </div>
         }
       >
-        Your router needs to confirm this device again.
+        Your router doesn't recognise this device. It may have been removed, or replaced by a newer one.
       </Banner>
     );
   }
@@ -201,7 +206,8 @@ export function App() {
   }, [state?.account, settingUp]);
 
   if (!state || settingUp === null) return <div className="drag h-full" />;
-  if (settingUp) return <Onboarding state={state} onDone={() => setSettingUp(false)} />;
+  // A call can ring while the "You're all set" screen is still up.
   if (state.call) return <CallView call={state.call} />;
+  if (settingUp) return <Onboarding state={state} onDone={() => setSettingUp(false)} />;
   return <Shell state={state} />;
 }

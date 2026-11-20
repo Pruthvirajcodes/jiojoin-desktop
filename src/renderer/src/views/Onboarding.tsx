@@ -69,6 +69,12 @@ function RouterStep({ state, onContinue }: { state: AppState; onContinue(): void
     const { model, service } = describeRouter(discovery.router);
     return (
       <Frame step={1} title="Jio router found">
+        {state.onboarding.notice && (
+          <div className="bg-warning-surface border-warning-border text-warning mb-4 flex gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <p role="alert">{state.onboarding.notice}</p>
+          </div>
+        )}
         <p className="text-muted-foreground mb-5 text-sm leading-relaxed">
           JioJoin places calls through your router's calling service, so it works on your home network.
         </p>
@@ -135,8 +141,9 @@ function DeviceStep({ state, onBack, onChecked }: { state: AppState; onBack(): v
   const checking = state.onboarding.phase === "checking";
 
   const submit = async () => {
-    await window.jiojoin.checkDevice(name);
-    onChecked();
+    // Move on only when the router said this device needs a code; on an error
+    // stay here with the message, so nobody requests a code by mistake.
+    if ((await window.jiojoin.checkDevice(name)) === "authorise") onChecked();
   };
 
   return (

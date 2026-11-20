@@ -282,9 +282,11 @@ export function SettingsView({ state }: { state: AppState }) {
             <RowText
               title={account?.deviceName ?? ""}
               detail={
-                state.secureStorage
+                state.storage === "keychain"
                   ? "Authorised on your router. The sign-in is kept in your system keychain."
-                  : "No system keychain is available, so you'll need a new code after quitting."
+                  : state.storage === "file"
+                    ? "Authorised on your router. No system keychain is available, so the sign-in is kept in a file only your user account can read."
+                    : "Authorised on your router, but the sign-in couldn't be saved. You'll need to set up again after quitting."
               }
             />
             <AlertDialog>
@@ -297,8 +299,9 @@ export function SettingsView({ state }: { state: AppState }) {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Sign out of this line?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This removes the saved sign-in and call history from this computer. To use JioJoin here
-                    again you'll need a new one-time code from your router.
+                    This removes your line's details and call history from this computer. It keeps this
+                    computer's device ID, so if you sign in again the router can recognise it without using up
+                    another device slot.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

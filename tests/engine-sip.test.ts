@@ -366,6 +366,47 @@ describe.skipIf(!runnable)("engine on the wire", () => {
     expect(ended.number).toBe("+919812345678");
   });
 
+  it("reports a ringing call that another device answered, so it isn't shown as missed", async () => {
+    const contact = /<([^>]+)>/.exec(
+      header(gateway.received.find((message) => message.start.startsWith("REGISTER"))!, "contact"),
+    )?.[1];
+    events.length = 0;
+    const via = `Via: SIP/2.0/TLS 127.0.0.1:${gateway.port};branch=z9hG4bK-forked-1`;
+    const common = [
+      "Max-Forwards: 70",
+      "From: <sip:+919812345678@xx.wln.ims.example.test>;tag=gw-fork",
+      "To: <sip:+915550100123@xx.wln.ims.example.test>",
+      "Call-ID: forked-call-1",
+    ];
+    gateway.send(
+      [
+        `INVITE ${contact} SIP/2.0`,
+        via,
+        ...common,
+        "CSeq: 1 INVITE",
+        `Contact: <sip:127.0.0.1:${gateway.port};transport=tls>`,
+        "Content-Type: application/sdp",
+      ],
+      ["v=0", "o=gw 1 1 IN IP4 127.0.0.1", "s=-", "c=IN IP4 127.0.0.1", "t=0 0",
+        "m=audio 40000 RTP/AVP 104", "a=rtpmap:104 AMR-WB/16000", "a=fmtp:104 octet-align=1", ""].join("\r\n"),
+    );
+    await gateway.next((message) => message.start.startsWith("SIP/2.0 180") && header(message, "call-id") === "forked-call-1");
+
+    // What the gateway sends the other legs once one device answers (RFC 3326).
+    gateway.send([
+      `CANCEL ${contact} SIP/2.0`,
+      via,
+      ...common,
+      "CSeq: 1 CANCEL",
+      'Reason: SIP;cause=200;text="Call completed elsewhere"',
+    ]);
+    const ended = await nextEvent(
+      (event): event is Extract<EngineEvent, { event: "call" }> =>
+        event.event === "call" && event.direction === "in" && event.state === "ended",
+    );
+    expect(ended.elsewhere).toBe(true);
+  });
+
   it("sends nothing to a TLS server whose certificate does not name the router", async () => {
     const impostor = new FakeGateway(otherIdentity!);
     await impostor.listen();

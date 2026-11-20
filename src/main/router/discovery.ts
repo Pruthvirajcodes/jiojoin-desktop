@@ -1,9 +1,10 @@
+import { execFile } from "node:child_process";
 import dgram from "node:dgram";
 import dns from "node:dns/promises";
 import { isIPv4 } from "node:net";
 import type { DiscoveryState, RouterSource } from "@shared/types";
 import { log } from "../logger";
-import { RouterHttpError, routerRequest } from "./http";
+import { type RouterFailureCode, RouterHttpError, routerRequest } from "./http";
 import { isPrivateIPv4 } from "./net";
 import { ROUTER_HOSTNAME } from "./provisioning";
 
@@ -55,7 +56,8 @@ export async function discoverRouter(deps: DiscoveryDeps, override = ""): Promis
     if (candidates.length === 0) {
       return {
         status: "not-found",
-        reason: "This computer isn't connected to a network.",
+        reason:
+          "Couldn't find the router: its name didn't resolve and this computer has no default gateway. Check that you're connected to the Jio router's network.",
         tried: [],
       };
     }
@@ -76,25 +78,65 @@ export async function discoverRouter(deps: DiscoveryDeps, override = ""): Promis
   };
 }
 
+const OWN_ROUTER_HINT =
+  "If you use your own Wi-Fi router or mesh, connect to the Jio router's network, or enter its address in Settings.";
+
+/** Why a candidate address isn't a usable Jio router, naming the address. */
+export function probeFailure(address: string, code: RouterFailureCode): string {
+  switch (code) {
+    case "bad-certificate":
+      return `The device at ${address} isn't a Jio router. ${OWN_ROUTER_HINT}`;
+    case "refused":
+      return `Something answered at ${address}, but no Jio calling service is running there. If the Jio router just restarted, wait a minute. ${OWN_ROUTER_HINT}`;
+    case "timeout":
+      return `Nothing answered at ${address}. If the Jio router just restarted, wait a minute and try again.`;
+    case "unreachable":
+    case "not-private":
+      return `Couldn't reach ${address} from this computer.`;
+    case "bad-reply":
+      return `The device at ${address} sent a reply this app couldn't read.`;
+    default: {
+      const unhandled: never = code;
+      return unhandled;
+    }
+  }
+}
+
 /** Non-mutating check: TLS handshake plus an HTTP HEAD, which the gateway answers with 501. */
 export async function probeRouter(address: string): Promise<ProbeResult> {
   try {
-    const response = await routerRequest({ address, method: "HEAD", path: "/", timeoutMs: 6000 });
+    // Generous: a router that has just restarted takes 4–6 s to answer.
+    const response = await routerRequest({ address, method: "HEAD", path: "/", timeoutMs: 10_000 });
     const server = response.headers.server;
     return { ok: true, server: typeof server === "string" ? server : "" };
   } catch (error) {
     log.warn("discovery", `probe of ${address} failed: ${error instanceof Error ? error.message : String(error)}`);
-    if (error instanceof RouterHttpError) {
-      if (error.code === "bad-certificate") {
-        return { ok: false, reason: "The device at the gateway address isn't a Jio router." };
-      }
-      if (error.code === "timeout") {
-        return { ok: false, reason: "The router didn't answer. Its calling service may be starting up." };
-      }
-      return { ok: false, reason: "The router's calling service isn't reachable from this network." };
-    }
-    return { ok: false, reason: "The router's calling service isn't reachable from this network." };
+    if (error instanceof RouterHttpError) return { ok: false, reason: probeFailure(address, error.code) };
+    return { ok: false, reason: `Couldn't reach ${address} from this computer.` };
   }
+}
+
+/**
+ * Windows: ask the routing table directly. `default-gateway` shells out to
+ * wmic, which recent Windows 11 releases no longer install.
+ */
+function windowsGateway(): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "(Get-NetRoute -DestinationPrefix 0.0.0.0/0 | Sort-Object RouteMetric | Select-Object -First 1).NextHop",
+      ],
+      { windowsHide: true, timeout: 8000 },
+      (error, stdout) => {
+        const address = String(stdout).trim();
+        resolve(!error && isIPv4(address) && address !== "0.0.0.0" ? address : null);
+      },
+    );
+  });
 }
 
 /** Logs how long a discovery step took; slow steps are the usual cause of a slow start. */
@@ -119,6 +161,10 @@ export const systemDiscoveryDeps: DiscoveryDeps = {
     }),
   gateway4: () =>
     timed("gateway lookup", async () => {
+      if (process.platform === "win32") {
+        const address = await windowsGateway();
+        if (address) return address;
+      }
       try {
         const { gateway4async } = await import("default-gateway");
         return (await gateway4async()).gateway;

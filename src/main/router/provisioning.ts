@@ -31,6 +31,13 @@ export interface ProvisionedLine {
 export type ProvisioningReply =
   | { kind: "config"; line: ProvisionedLine }
   | { kind: "otp-required"; cookie: string; sentTo: string }
+  /**
+   * The router answered normally but handed over no account: this device is
+   * not on its whitelist (never added, removed in JioHome, or pushed out by a
+   * newer device). JUICE 1.5.5 logs "Device Not Found in Whitelist" and sends
+   * a provisioning document with no SIP credentials.
+   */
+  | { kind: "not-authorised" }
   | { kind: "rejected"; status: number; reason: string };
 
 /** Only characters that are safe in the router's query parser. */
@@ -108,7 +115,12 @@ export function parseProvisioningReply(reply: RawReply): ProvisioningReply {
   if (reply.status === 200 && body.includes("<wap-provisioningdoc")) {
     const parsed = parseProvisioningXml(body);
     if (parsed.ok) return { kind: "config", line: parsed.line };
-    return { kind: "rejected", status: reply.status, reason: parsed.reason };
+    // A well-formed document with no account at all is the router's "not on
+    // the whitelist" answer. A partial account is a reply we can't use.
+    if (parsed.reason === "unreadable reply" || !parsed.noAccount) {
+      return { kind: "rejected", status: reply.status, reason: parsed.reason };
+    }
+    return { kind: "not-authorised" };
   }
   const cookie = cookieFromSetCookie(reply.headers["set-cookie"]);
   if (reply.status === 200 && body === "" && cookie !== "") {
@@ -159,7 +171,7 @@ function collectParms(node: unknown, path: string[], out: Parm[]): void {
 
 export function parseProvisioningXml(
   text: string,
-): { ok: true; line: ProvisionedLine } | { ok: false; reason: string } {
+): { ok: true; line: ProvisionedLine } | { ok: false; reason: string; noAccount?: boolean } {
   let doc: unknown;
   try {
     doc = (xml.parse(text) as Record<string, unknown>)["wap-provisioningdoc"];
@@ -189,7 +201,13 @@ export function parseProvisioningXml(
   const missing = Object.entries({ realm, password, publicIdentity, authUser, instanceId })
     .filter(([, value]) => value === "")
     .map(([key]) => key);
-  if (missing.length > 0) return { ok: false, reason: `reply is missing ${missing.join(", ")}` };
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason: `reply is missing ${missing.join(", ")}`,
+      noAccount: password === "" && publicIdentity === "",
+    };
+  }
   if (!/^sips?:[^@\s]+@[^@\s]+$/i.test(publicIdentity)) {
     return { ok: false, reason: "reply has an unusable identity" };
   }

@@ -30,6 +30,8 @@ export interface OnboardingState {
   /** Masked mobile number the router texted, when it reports one. */
   otpSentTo: string;
   error: string;
+  /** Shown above setup: why it is running again, when the app knows. */
+  notice?: string;
 }
 
 export type LineStatus =
@@ -72,6 +74,8 @@ export interface CallInfo {
   /** Plain-language outcome once the call has ended. */
   endReason: string;
   failed: boolean;
+  /** Why the last action on this call (such as Answer) didn't work. */
+  notice?: string;
 }
 
 export type HistoryKind = "incoming" | "outgoing" | "missed" | "failed";
@@ -136,9 +140,17 @@ export interface AppState {
   missedCount: number;
   settings: Settings;
   engine: EngineStatus;
-  /** False when the OS offers no keychain, so the sign-in lasts only until quit. */
-  secureStorage: boolean;
+  /**
+   * Where the sign-in is kept: the OS keychain, a file only this user can
+   * read (no usable keychain), or nowhere because saving failed.
+   */
+  storage: SignInStorage;
 }
+
+export type SignInStorage = "keychain" | "file" | "unsaved";
+
+/** What the setup screen should do after checking whether the router knows this device. */
+export type CheckOutcome = "done" | "authorise" | "retry";
 
 export interface AudioDevice {
   name: string;
@@ -169,7 +181,7 @@ export interface Api {
   getState(): Promise<AppState>;
 
   discover(): Promise<void>;
-  checkDevice(deviceName: string): Promise<void>;
+  checkDevice(deviceName: string): Promise<CheckOutcome>;
   requestOtp(): Promise<void>;
   submitOtp(code: string): Promise<void>;
   cancelOnboarding(): Promise<void>;
@@ -178,7 +190,7 @@ export interface Api {
   disconnect(): Promise<void>;
 
   dial(number: string): Promise<ActionResult>;
-  answer(): Promise<void>;
+  answer(): Promise<ActionResult>;
   hangup(): Promise<void>;
   setMuted(muted: boolean): Promise<void>;
   setHold(held: boolean): Promise<void>;

@@ -11,6 +11,7 @@ import type { RouterResponse } from "../router/http";
 
 const DEMO_ROUTER = "192.168.29.1";
 const DEMO_OTP = "246810";
+const DEMO_UNAUTHORISED = `<wap-provisioningdoc version="1.1"><characteristic type="VERS"><parm name="version" value="-2"/><parm name="validity" value="-2"/></characteristic></wap-provisioningdoc>`;
 const DEMO_XML = `<wap-provisioningdoc version="1.1"><characteristic type="application">
 <characteristic type="appauth"><parm name="realm" value="demo.wln.ims.example"/>
 <parm name="username" value="912255500142@demo.wln.ims.example"/><parm name="userpwd" value="demo-only"/></characteristic>
@@ -27,6 +28,7 @@ export class DemoEngine implements Engine {
   running = false;
   onEvent: (event: EngineEvent) => void = () => {};
   onCrash: () => void = () => {};
+  onStop: () => void = () => {};
   private timers: ReturnType<typeof setTimeout>[] = [];
   private meter: ReturnType<typeof setInterval> | null = null;
   private call: CallEvent | null = null;
@@ -46,6 +48,7 @@ export class DemoEngine implements Engine {
   }
 
   async stop(): Promise<void> {
+    if (this.running) this.onStop();
     for (const timer of this.timers) clearTimeout(timer);
     this.timers = [];
     if (this.meter) clearInterval(this.meter);
@@ -183,7 +186,8 @@ export function createDemoBackend(knownDeviceId?: string): Backend & { engine: D
       }
       const device = query.get("mac_address") ?? "";
       if (authorised.has(device)) return reply(200, DEMO_XML);
-      if (query.get("op_type") !== "add") return reply(403);
+      // Like JUICE: an unknown device's plain request gets a document with no account.
+      if (query.get("op_type") !== "add") return reply(200, DEMO_UNAUTHORISED);
       const session = `DemoCookie=${device}`;
       pending.set(session, device);
       return reply(200, "", { "set-cookie": [`${session}; Path=/`], "x-amn": "+91********42" });

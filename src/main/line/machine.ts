@@ -102,7 +102,8 @@ export function reduceLine(state: LineState, event: LineEvent, context: LineCont
 
     case "otp-required":
       if (state.status !== "connecting") return stay(state);
-      // Never retry on our own from here: each attempt could text the owner.
+      // The device must be confirmed with a code, which only the user may
+      // request. Don't retry on a timer; a new network or "Connect" checks again.
       return {
         state: {
           status: "needs-otp",
@@ -118,7 +119,14 @@ export function reduceLine(state: LineState, event: LineEvent, context: LineCont
 
     case "network-changed":
       // A new network is a fresh start; a manual or signed-out state stays put.
-      if (state.status === "retrying" || state.status === "registered" || state.status === "connecting") {
+      // needs-otp checks again too: attempts only send the plain request, which
+      // can't text anyone, and the device may be back on a router that knows it.
+      if (
+        state.status === "retrying" ||
+        state.status === "registered" ||
+        state.status === "connecting" ||
+        state.status === "needs-otp"
+      ) {
         return beginAttempt(0);
       }
       return stay(state);

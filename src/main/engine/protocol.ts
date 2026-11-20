@@ -35,6 +35,8 @@ export type EngineEvent =
       remoteHeld: boolean;
       muted: boolean;
       codec?: string;
+      /** On "ended": the gateway cancelled the ringing because another device answered. */
+      elsewhere?: boolean;
     }
   | { event: "busyReject"; number: string; name: string }
   | { event: "level"; mic: number; speaker: number };

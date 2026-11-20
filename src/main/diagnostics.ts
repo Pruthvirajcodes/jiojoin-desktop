@@ -20,7 +20,7 @@ export function buildDiagnostics(state: AppState, history: HistoryEntry[], logge
     `Version: ${state.version}`,
     `Platform: ${state.platform} ${release()} (${process.arch})`,
     `Electron: ${process.versions.electron}`,
-    `Secure storage: ${state.secureStorage ? "yes" : "no"}`,
+    `Sign-in storage: ${state.storage}`,
     "",
     "== Engine ==",
     `Ready: ${state.engine.ready ? "yes" : "no"}`,

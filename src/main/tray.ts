@@ -53,7 +53,9 @@ export class AppTray {
     if (process.platform === "darwin") app.dock?.setBadge(missed > 0 ? String(missed) : "");
 
     const signedIn = state.account !== null;
-    const canConnect = signedIn && (state.line.status === "offline" || state.line.status === "retrying");
+    const canConnect =
+      signedIn &&
+      (state.line.status === "offline" || state.line.status === "retrying" || state.line.status === "needs-otp");
     const canDisconnect =
       signedIn && (state.line.status === "registered" || state.line.status === "connecting");
 

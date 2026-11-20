@@ -58,6 +58,8 @@ static struct engine {
     pj_bool_t dialing;
     char remote_number[96];
     char remote_name[128];
+    /* The gateway cancelled a ringing call because another device answered. */
+    pj_bool_t answered_elsewhere;
 
     pjmedia_port *ring_port, *ringback_port, *test_port, *null_port;
     pjsua_conf_port_id ring_slot, ringback_slot, test_slot, null_slot;
@@ -420,6 +422,8 @@ static void emit_call(pjsua_call_id call_id, const pjsua_call_info *ci)
     jb_bool(&b, "held", media == PJSUA_CALL_MEDIA_LOCAL_HOLD);
     jb_bool(&b, "remoteHeld", media == PJSUA_CALL_MEDIA_REMOTE_HOLD);
     jb_bool(&b, "muted", g.muted);
+    if (ci->state == PJSIP_INV_STATE_DISCONNECTED && g.answered_elsewhere)
+        jb_bool(&b, "elsewhere", PJ_TRUE);
     if (media == PJSUA_CALL_MEDIA_ACTIVE) {
         pjsua_stream_info si;
         if (pjsua_call_get_stream_info(call_id, 0, &si) == PJ_SUCCESS &&
@@ -513,8 +517,44 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 
     if (ci.state == PJSIP_INV_STATE_DISCONNECTED) {
         g.call = PJSUA_INVALID_ID;
+        g.answered_elsewhere = PJ_FALSE;
         g.remote_number[0] = g.remote_name[0] = '\0';
         set_muted(PJ_FALSE);
+    }
+}
+
+/* JUICE forks an incoming call to every registered device and cancels the
+ * others once one answers, with "Reason: SIP;cause=200;text=\"Call completed
+ * elsewhere\"" (RFC 3326). PJSIP reports the CANCEL here before the call
+ * disconnects. */
+static void on_call_tsx_state(pjsua_call_id call_id, pjsip_transaction *tsx,
+                              pjsip_event *e)
+{
+    static const pj_str_t REASON = {"Reason", 6};
+    pjsip_generic_string_hdr *reason;
+    pjsip_msg *msg;
+    char text[160];
+
+    if (call_id != g.call || tsx->role != PJSIP_ROLE_UAS ||
+        tsx->method.id != PJSIP_CANCEL_METHOD ||
+        e->type != PJSIP_EVENT_TSX_STATE ||
+        e->body.tsx_state.type != PJSIP_EVENT_RX_MSG)
+        return;
+    msg = e->body.tsx_state.src.rdata->msg_info.msg;
+    for (reason = (pjsip_generic_string_hdr *)pjsip_msg_find_hdr_by_name(msg, &REASON, NULL);
+         reason;
+         reason = (pjsip_generic_string_hdr *)pjsip_msg_find_hdr_by_name(msg, &REASON, reason->next))
+    {
+        int len = (int)reason->hvalue.slen < (int)sizeof(text) - 1 ? (int)reason->hvalue.slen
+                                                                    : (int)sizeof(text) - 1;
+        int i;
+        for (i = 0; i < len; i++)
+            text[i] = (char)pj_tolower((unsigned char)reason->hvalue.ptr[i]);
+        text[len] = '\0';
+        if (strstr(text, "cause=200") || strstr(text, "completed elsewhere")) {
+            g.answered_elsewhere = PJ_TRUE;
+            break;
+        }
     }
 }
 
@@ -1048,6 +1088,7 @@ static pj_status_t engine_start(void)
     cfg.use_srtp = PJMEDIA_SRTP_DISABLED;
     cfg.cb.on_incoming_call = &on_incoming_call;
     cfg.cb.on_call_state = &on_call_state;
+    cfg.cb.on_call_tsx_state = &on_call_tsx_state;
     cfg.cb.on_call_media_state = &on_call_media_state;
     cfg.cb.on_reg_started2 = &on_reg_started2;
     cfg.cb.on_reg_state2 = &on_reg_state2;

@@ -16,6 +16,8 @@ export interface Engine {
   onEvent: (event: EngineEvent) => void;
   /** Called when the engine exits without having been asked to. */
   onCrash: () => void;
+  /** Called when a running engine is retired on purpose; its later events are dropped. */
+  onStop: () => void;
 }
 
 const READY_TIMEOUT_MS = 15_000;
@@ -30,6 +32,7 @@ export class EngineProcess implements Engine {
   private stopping = false;
   onEvent: (event: EngineEvent) => void = () => {};
   onCrash: () => void = () => {};
+  onStop: () => void = () => {};
 
   constructor(private readonly binaryPath: string) {}
 
@@ -64,7 +67,9 @@ export class EngineProcess implements Engine {
       (event) => {
         if (event.event === "ready") onReady();
         else if (event.event === "fatal") onFailed(new EngineError(event.error));
-        else this.onEvent(event);
+        // A retiring engine still reports its own shutdown (un-REGISTER,
+        // calls hung up). That describes the old engine, not the line now.
+        else if (this.child === child) this.onEvent(event);
       },
     );
     this.protocol = protocol;
@@ -127,6 +132,7 @@ export class EngineProcess implements Engine {
     this.stopping = true;
     this.child = null;
     this.protocol = null;
+    this.onStop();
 
     const exited = new Promise<void>((resolve) => {
       if (child.exitCode !== null || child.signalCode !== null) resolve();

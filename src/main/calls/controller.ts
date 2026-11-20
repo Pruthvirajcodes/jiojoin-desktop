@@ -36,6 +36,8 @@ const STATE_MAP: Record<EngineCallEvent["state"], CallState> = {
 /** Owns the one call the app can have at a time, and writes its history entry. */
 export class CallsController {
   private call: CallInfo | null = null;
+  /** The engine's id for the current call, so commands can't land on a different one. */
+  private engineCallId: number | null = null;
   private endedByUser = false;
   private clearTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -84,13 +86,33 @@ export class CallsController {
     }
   }
 
-  async answer(): Promise<void> {
-    if (this.call?.state !== "incoming") return;
-    if (!(await this.deps.backend.ensureMicrophone())) {
-      log.warn("call", "answer blocked: microphone access denied");
-      return;
+  async answer(): Promise<ActionResult> {
+    const call = this.call;
+    const callId = this.engineCallId;
+    if (call?.state !== "incoming" || callId === null) return { ok: false, error: "There's no call to answer." };
+    // The first microphone prompt can take a while; the caller may hang up
+    // and someone else ring in the meantime.
+    const allowed = await this.deps.backend.ensureMicrophone();
+    if (this.call?.id !== call.id || this.call.state !== "incoming") {
+      return { ok: false, error: "The caller hung up." };
     }
-    await this.deps.backend.engine.request("answer").catch(() => {});
+    if (!allowed) {
+      log.warn("call", "answer blocked: microphone access denied");
+      return this.notice(MICROPHONE_HELP);
+    }
+    try {
+      await this.deps.backend.engine.request("answer", { callId });
+      return { ok: true };
+    } catch (error) {
+      log.warn("call", `answer failed: ${error instanceof Error ? error.message : String(error)}`);
+      return this.notice("The call couldn't be answered.");
+    }
+  }
+
+  /** Shows why an action failed on the call screen and returns it to the caller. */
+  private notice(error: string): ActionResult {
+    if (this.call) this.setCall({ ...this.call, notice: error });
+    return { ok: false, error };
   }
 
   async hangup(): Promise<void> {
@@ -136,6 +158,7 @@ export class CallsController {
       return;
     }
     if (event.event !== "call") return;
+    if (event.state !== "ended") this.engineCallId = event.callId;
 
     if (!this.call || this.call.state === "ended") {
       if (event.direction !== "in" || event.state === "ended") return;
@@ -175,8 +198,9 @@ export class CallsController {
     });
   }
 
-  handleEngineStopped(): void {
-    if (this.active) this.finish({ text: "The call was cut off", failed: true });
+  /** The engine went away (crashed, or was retired on purpose) with a call still up. */
+  handleEngineStopped(outcome: { text: string; failed: boolean }): void {
+    if (this.active) this.finish(outcome);
   }
 
   private finishFromEngine(event: EngineCallEvent): void {
@@ -184,6 +208,8 @@ export class CallsController {
     if (!call) return;
     if (call.answeredAt) {
       this.finish({ text: "Call ended", failed: false });
+    } else if (call.direction === "incoming" && event.elsewhere) {
+      this.finish({ text: "Answered on another device", failed: false, answeredElsewhere: true });
     } else if (call.direction === "incoming") {
       this.finish({ text: this.endedByUser ? "Call declined" : "Missed call", failed: false });
     } else if (this.endedByUser) {
@@ -194,12 +220,13 @@ export class CallsController {
     }
   }
 
-  private finish(outcome: { text: string; failed: boolean }): void {
+  private finish(outcome: { text: string; failed: boolean; answeredElsewhere?: boolean }): void {
     const call = this.call;
     if (!call || call.state === "ended") return;
     const endedAt = Date.now();
     const durationSec = call.answeredAt ? Math.round((endedAt - call.answeredAt) / 1000) : 0;
-    const missed = call.direction === "incoming" && !call.answeredAt && !this.endedByUser;
+    const missed =
+      call.direction === "incoming" && !call.answeredAt && !this.endedByUser && !outcome.answeredElsewhere;
 
     this.deps.history.add({
       kind: missed ? "missed" : outcome.failed ? "failed" : call.direction,
@@ -210,6 +237,7 @@ export class CallsController {
       reason: call.answeredAt ? "" : outcome.text,
     });
 
+    this.engineCallId = null;
     const ended: CallInfo = {
       ...call,
       state: "ended",

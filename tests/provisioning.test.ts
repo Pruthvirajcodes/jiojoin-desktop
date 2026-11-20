@@ -74,7 +74,7 @@ describe("provisioning reply", () => {
 
   it("rejects a document without a password or identity", () => {
     const parsed = parseProvisioningXml(fixture.replace(/<parm name="userpwd"[^>]*>/, ""));
-    expect(parsed).toEqual({ ok: false, reason: "reply is missing password" });
+    expect(parsed).toMatchObject({ ok: false, reason: "reply is missing password", noAccount: false });
     expect(parseProvisioningXml("<html>501</html>").ok).toBe(false);
     expect(parseProvisioningXml("<wap-provisioningdoc").ok).toBe(false);
   });
@@ -98,6 +98,20 @@ describe("provisioning reply", () => {
       cookie: "WITRCSeConfigCookie=11111111-2222-3333-4444-555555555555",
       sentTo: "+91********12",
     });
+  });
+
+  it("reads a provisioning document with no account as 'not on the whitelist'", () => {
+    // JUICE answers an unknown device's plain request with HTTP 200 and a
+    // provisioning document that carries no SIP credentials.
+    const unauthorised =
+      '<?xml version="1.0"?><wap-provisioningdoc version="1.1"><characteristic type="VERS">' +
+      '<parm name="version" value="-2"/><parm name="validity" value="-2"/></characteristic></wap-provisioningdoc>';
+    expect(parseProvisioningReply({ status: 200, headers: {}, body: unauthorised })).toEqual({ kind: "not-authorised" });
+    // A partial account is a broken reply, not a verdict on the device.
+    const partial = fixture.replace(/<parm name="userpwd"[^>]*>/, "");
+    expect(parseProvisioningReply({ status: 200, headers: {}, body: partial }).kind).toBe("rejected");
+    // An error page is never read as "not authorised".
+    expect(parseProvisioningReply({ status: 503, headers: {}, body: unauthorised }).kind).toBe("rejected");
   });
 
   it("classifies anything else as a rejection", () => {

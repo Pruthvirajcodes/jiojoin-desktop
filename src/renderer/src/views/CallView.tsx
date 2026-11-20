@@ -113,6 +113,12 @@ export function CallView({ call }: { call: CallInfo }) {
 
         {keypad && <Keypad onKey={sendTone} />}
 
+        {call.notice && call.state !== "ended" && (
+          <p role="alert" className="text-destructive max-w-xs text-center text-sm">
+            {call.notice}
+          </p>
+        )}
+
         {call.state === "incoming" ? (
           <div className="flex gap-16">
             <RoundButton tone="hangup" size="lg" label="Decline" showLabel onClick={() => void window.jiojoin.hangup()}>

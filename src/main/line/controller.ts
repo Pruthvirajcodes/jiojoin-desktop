@@ -2,7 +2,7 @@ import type { LineState } from "@shared/types";
 import { type Backend, fetchCredentials } from "../backend";
 import type { EngineEvent } from "../engine/protocol";
 import { log } from "../logger";
-import { registrationFailure } from "../reasons";
+import { provisioningRefusal, registrationFailure, routerFailure } from "../reasons";
 import { discoverRouter } from "../router/discovery";
 import { RouterHttpError } from "../router/http";
 import { type ProvisionedLine, buildSipAccount, numberFromIdentity } from "../router/provisioning";
@@ -19,6 +19,8 @@ interface Deps {
   hasActiveCall(): boolean;
   /** The router answered a refresh with an OTP challenge instead of credentials. */
   onOtpChallenge(session: { cookie: string; sentTo: string; address: string }): void;
+  /** The router no longer has this device on its whitelist; no code has been sent. */
+  onNotAuthorised(address: string): void;
 }
 
 /** Runs the effects the line state machine asks for. */
@@ -28,6 +30,8 @@ export class LineController {
   private deadline: ReturnType<typeof setTimeout> | null = null;
   private attemptId = 0;
   private pendingNetworkChange = false;
+  /** A registration failure that arrived during a call, handled once the call ends. */
+  private pendingFailure: string | null = null;
   /** Credentials for the current registration. Memory only. */
   private line: ProvisionedLine | null = null;
 
@@ -61,34 +65,53 @@ export class LineController {
   }
 
   callEnded(): void {
-    if (!this.pendingNetworkChange) return;
+    const failure = this.pendingFailure;
+    const networkChanged = this.pendingNetworkChange;
+    this.pendingFailure = null;
     this.pendingNetworkChange = false;
-    this.dispatch({ type: "network-changed" });
+    if (failure !== null) this.dispatch({ type: "failed", reason: failure });
+    else if (networkChanged) this.dispatch({ type: "network-changed" });
+  }
+
+  /**
+   * A registered line that loses its registration mid-call keeps the engine
+   * (and the call) running: the engine is told not to drop calls on a failed
+   * re-REGISTER, and stopping it here would cut the call off.
+   */
+  private lineFailed(reason: string): void {
+    if (this.state.status === "registered" && this.deps.hasActiveCall()) {
+      log.warn("line", `registration lost during a call; reconnecting after it ends: ${reason}`);
+      this.pendingFailure = reason;
+      return;
+    }
+    this.dispatch({ type: "failed", reason });
   }
 
   handleEngineEvent(event: EngineEvent): void {
     if (event.event === "reg") {
       if (event.state === "registered") {
         this.clearDeadline();
+        this.pendingFailure = null;
         this.dispatch({ type: "registered" });
       } else if (event.state === "failed") {
         this.clearDeadline();
         log.warn("line", `registration failed: ${event.code} ${event.reason}`);
-        this.dispatch({ type: "failed", reason: registrationFailure(event.code, event.reason) });
+        this.lineFailed(registrationFailure(event.code, event.reason));
       } else if (event.state === "unregistered") {
-        this.dispatch({ type: "failed", reason: "The router ended this device's registration." });
+        this.lineFailed("The router ended this device's registration.");
       }
     } else if (event.event === "transport") {
       if (event.state === "rejected") {
         this.dispatch({ type: "failed", reason: "The device at the router's address isn't a Jio router." });
       } else if (event.state === "disconnected" && this.state.status === "registered") {
-        this.dispatch({ type: "failed", reason: "Lost the connection to the router." });
+        this.lineFailed("Lost the connection to the router.");
       }
     }
   }
 
   handleEngineCrash(): void {
     this.clearDeadline();
+    this.pendingFailure = null;
     this.dispatch({ type: "failed", reason: "The calling engine stopped unexpectedly." });
   }
 
@@ -99,6 +122,7 @@ export class LineController {
         break;
       case "stop":
         this.attemptId++;
+        this.pendingFailure = null;
         this.clearDeadline();
         this.line = null;
         void this.deps.backend.engine.stop();
@@ -136,18 +160,26 @@ export class LineController {
       const router = discovery.router;
       store.update({ router });
 
-      // The router insists on a credential refresh before every registration.
+      // Refresh before every registration: the password is never stored, and
+      // this is how the app learns the router has dropped this device. The
+      // plain request can't make the router text anyone; only the user's
+      // "Request code" click can (see onboarding.ts).
       this.dispatch({ type: "phase", phase: "refreshing" });
-      const reply = await fetchCredentials(backend, router.address, identity, identity.onboarded);
+      const reply = await fetchCredentials(backend, router.address, identity);
       if (stale()) return;
       if (reply.kind === "otp-required") {
         this.deps.onOtpChallenge({ cookie: reply.cookie, sentTo: reply.sentTo, address: router.address });
         this.dispatch({ type: "otp-required" });
         return;
       }
+      if (reply.kind === "not-authorised") {
+        this.deps.onNotAuthorised(router.address);
+        this.dispatch({ type: "otp-required" });
+        return;
+      }
       if (reply.kind === "rejected") {
         log.warn("line", `credential refresh rejected: ${reply.reason}`);
-        this.dispatch({ type: "failed", reason: "The router didn't hand over this line's details." });
+        this.dispatch({ type: "failed", reason: provisioningRefusal(reply) });
         return;
       }
 
@@ -170,13 +202,15 @@ export class LineController {
       await backend.engine
         .request("setDevices", { input: inputDevice, output: outputDevice })
         .catch(() => {});
+      // The gateway holds a LAN registration until its own upstream one is up.
+      // Armed before the request: the engine's "registered" event can be
+      // handled before this await resumes, and must find the timer to clear.
+      this.deadline = setTimeout(() => {
+        if (!stale()) this.dispatch({ type: "failed", reason: "The router didn't answer in time." });
+      }, REGISTER_DEADLINE_MS);
+      this.line = line;
       await backend.engine.request("register", buildSipAccount(line, router.address, localAddress));
       if (stale()) return;
-      this.line = line;
-      // The gateway holds a LAN registration until its own upstream one is up.
-      this.deadline = setTimeout(() => {
-        this.dispatch({ type: "failed", reason: "The router didn't answer in time." });
-      }, REGISTER_DEADLINE_MS);
     } catch (error) {
       if (stale()) return;
       const message = error instanceof Error ? error.message : String(error);
@@ -202,19 +236,7 @@ export class LineController {
 }
 
 function describeFailure(error: unknown): string {
-  if (error instanceof RouterHttpError) {
-    switch (error.code) {
-      case "timeout":
-        return "The router didn't answer in time.";
-      case "bad-certificate":
-      case "not-private":
-        return "The device at the router's address isn't a Jio router.";
-      case "bad-reply":
-        return "The router sent a reply this app couldn't read.";
-      default:
-        return "The router's calling service isn't reachable.";
-    }
-  }
+  if (error instanceof RouterHttpError) return routerFailure(error.code);
   if (error instanceof Error && /engine/.test(error.message)) {
     return "The calling engine couldn't start.";
   }

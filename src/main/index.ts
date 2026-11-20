@@ -61,6 +61,18 @@ if (shotsDir) {
   app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 }
 
+// Chromium picks the Linux keyring backend from the desktop's name, and on
+// desktops it doesn't recognise (Hyprland, Sway, i3, ...) it falls back to a
+// fixed key even when a Secret Service keyring is running. Ask for libsecret
+// unless the user chose a backend or runs KDE (KWallet is picked there).
+if (
+  process.platform === "linux" &&
+  !app.commandLine.hasSwitch("password-store") &&
+  !/kde/i.test(process.env.XDG_CURRENT_DESKTOP ?? "")
+) {
+  app.commandLine.appendSwitch("password-store", "gnome-libsecret");
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -75,11 +87,15 @@ async function main(): Promise<void> {
   nativeTheme.themeSource = settings.theme;
 
   // Demo mode must not create or read anything in the real keychain.
-  const vault = demo ? Vault.inMemory() : await Vault.open(dataPath("account.bin"));
+  let keychainNotice = "";
+  const vault = demo ? Vault.inMemory() : await Vault.open(dataPath("account.bin"), dataPath("account.json"));
   if (!demo && (await vault.adoptImport(dataPath("import-device.json")))) {
     log.info("app", "imported a device id; onboarding will try it before asking for a code");
   }
   const stored = vault.get();
+  if (vault.unreadable) {
+    keychainNotice = "Your saved sign-in couldn't be read because the system keychain refused access. If you allow JioJoin in the keychain and restart, it will be used again. Setting up now will need a new code.";
+  }
   if (stored) {
     log.addSecret(stored.deviceId);
     log.addSecret(stored.deviceName);
@@ -94,14 +110,14 @@ async function main(): Promise<void> {
     demo,
     defaultDeviceName: demo ? "Study Mac" : hostname().replace(/\.(local|lan|home)$/i, "").slice(0, 32),
     account: stored?.onboarded ? { deviceName: stored.deviceName, number: stored.number } : null,
-    onboarding: INITIAL_ONBOARDING,
+    onboarding: keychainNotice ? { ...INITIAL_ONBOARDING, notice: keychainNotice } : INITIAL_ONBOARDING,
     line: SIGNED_OUT,
     router: null,
     call: null,
     missedCount: 0,
     settings,
     engine: { ready: false, version: "", codecs: [], error: "" },
-    secureStorage: vault.secure || demo,
+    storage: vault.secure || demo ? "keychain" : "file",
   });
 
   const history = new HistoryStore(dataPath("history.json"), (entries) => {
@@ -151,6 +167,8 @@ async function main(): Promise<void> {
     onCallOver: (call) => {
       windows.hideIncoming();
       line.callEnded();
+      // Quitting hangs up a ringing call; that isn't a missed call to announce.
+      if (windows.quitting) return;
       if (call.direction === "incoming" && !call.answeredAt && call.endReason === "Missed call") {
         if (Notification.isSupported() && !windows.mainVisibleAndFocused) {
           const notification = new Notification({
@@ -170,6 +188,7 @@ async function main(): Promise<void> {
     vault,
     hasActiveCall: () => calls.active,
     onOtpChallenge: (challenge) => onboarding.adoptChallenge(challenge),
+    onNotAuthorised: () => onboarding.needsConfirmation(),
   });
 
   backend.engine.onEvent = (event) => {
@@ -181,9 +200,12 @@ async function main(): Promise<void> {
     calls.handleEngineEvent(event);
   };
   backend.engine.onCrash = () => {
-    calls.handleEngineStopped();
+    calls.handleEngineStopped({ text: "The call was cut off", failed: true });
     line.handleEngineCrash();
   };
+  // A deliberate stop (disconnect, sign-out, reconnect, quit) drops the old
+  // engine's events, including its "call ended", so close the call out here.
+  backend.engine.onStop = () => calls.handleEngineStopped({ text: "Call ended", failed: false });
 
   const quit = () => {
     windows.quitting = true;
@@ -282,11 +304,11 @@ async function main(): Promise<void> {
     signOut: async () => {
       await calls.hangup();
       line.dispatch({ type: "sign-out" });
-      vault.clear();
+      await vault.forgetLine();
       history.clear();
       onboarding.reset();
       store.update({ account: null, router: null });
-      log.info("app", "signed out; credentials wiped");
+      log.info("app", "signed out; line details wiped, device id kept");
     },
     exportDiagnostics: async () => {
       const window = windows.mainWindow;
